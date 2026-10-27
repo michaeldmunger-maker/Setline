@@ -1,6 +1,6 @@
 # Setline: start here
 
-Current snapshot: October 26, 2026. Read this before the README, which also contains older implementation notes.
+Current snapshot: October 27, 2026. See [ONBOARDING_AND_RESET.md](ONBOARDING_AND_RESET.md) for the current first-run flow and Data & Privacy controls. Read this before the README, which also contains older implementation notes.
 
 ## Purpose
 
@@ -10,8 +10,8 @@ Arnold is an original weight-plate coach mascot. The approved look is charcoal/b
 
 ## Current experience
 
-1. Minimal Welcome to Setline screen with Continue.
-2. Meet Arnold: Paste my workout notes, Upload workout photos, Enter my numbers manually, or Start fresh. The first three buttons are dark; Start fresh is green.
+1. Welcome to Setline explains sets/reps/weight tracking using the existing Arnold artwork, then introduces Arnold.
+2. Choose import, manual latest numbers, or starting fresh. Each path leads to a short skippable logging guide. Incomplete setup resumes; completed onboarding stays completed across updates. Settings → Data & Privacy offers confirmed discard and full reset with optional backup and typed RESET.
 3. Notes/photos lead to editable exercise review, then explicitly save starting numbers. Starting numbers mean the last sets, reps and weight performed, not a required one-rep max. Pasted notes have a limited offline parser; AI and photo interpretation need the optional server.
 4. Manual entry: choose exercise, choose set count with +/−, then set reps and weight per set with +/−.
 5. Start fresh leads directly to Today. Search and filter exercises, or create a custom one using name → muscle group → logging mode. Selected exercises start an autosaved active session and get a two-step setup inside the workout route: set count → editable starting numbers. No routine name is required.
@@ -38,7 +38,7 @@ npm run export:ios
 
 Expo Go must support SDK 58. Phone and development Mac need to reach each other on the network. `npm run web` provides a browser preview. The iOS export checks the JS/Hermes bundle; it is not a signed app or a physical-device runtime test.
 
-On this snapshot: typecheck, lint, all 50 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Workout logging was also checked at 390×844 and 375×667 in an isolated browser preview: automatic previous numbers, logging, edits, undo, rest extension/skip and reload continuity passed without horizontal overflow. Native keyboard, safe areas, thumb reach and background/resume still need physical iPhone testing.
+On this snapshot: typecheck, lint, all 63 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Workout logging was also checked at 390×844 and 375×667 in an isolated browser preview: automatic previous numbers, logging, edits, undo, rest extension/skip and reload continuity passed without horizontal overflow. Native keyboard, safe areas, thumb reach and background/resume still need physical iPhone testing.
 
 ## Data must survive changes
 

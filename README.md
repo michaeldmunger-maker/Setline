@@ -32,7 +32,7 @@ The Arnold tab imports pasted notes offline into an editable draft, or uses an o
 
 ## Data continuity and first-run welcome
 
-On a fresh install Arnold welcomes you and immediately offers pasted-note and photo import, with an option to start without importing. Approving an import or continuing completes the welcome once. You can reopen it in You. Existing users also see the introduction once. A separate welcome version records explicit completion, so old migration flags cannot accidentally skip it. The root navigator gates all app routes, including restored workout deep links, until that introduction is completed.
+On a fresh install Arnold welcomes you and immediately offers pasted-note and photo import, with an option to start without importing. Approving an import or continuing completes the welcome once. You can reopen it in You. Returning users with completed onboarding are not forced through it again. Missing onboarding metadata is inferred from existing progress without deleting data; incomplete setup resumes from its saved cursor. The root navigator gates all app routes, including restored workout deep links, until that introduction is completed.
 
 Schema v2 migrates existing v1 saves and backup files. **Keep `setline-v1` as the storage key, the app slug `setline-training`, scheme and native bundle/package identifiers stable. Never replace real saves with seed data during an update.** Training loads before navigation mounts. A failed load shows a recovery screen; unknown newer schemas are preserved and require the newer app. Never silently downgrade them to older recovery data.
 
@@ -81,3 +81,7 @@ See `design/approved-flows/` for the approved concept boards and the implementat
 **Start fresh** opens Today’s **Start my first workout** path. Exercise selection starts training directly; no routine needs to be named or saved. Initial values come only from the selected exercise’s saved baseline or completed history. Live training uses +/- set controls, completed-set summaries, a compact persistent rest timer, and an explicit final review. Exercises can be added mid-session. After saving a session, Today offers **Repeat last workout**.
 
 Photo import now accepts up to four photos per request, with the existing total upload cap. The updated `server/reader.mjs` must be running for multi-photo AI requests. Restart `npm run arnold` after updating an already-running service. No live OpenAI call was needed to verify the UI: request formatting and limits are covered with mocked API responses. Pasted notes still work offline. AI photo reading requires the existing server-side key and paired connection; selected photos are temporary and are never written to the service’s disk.
+
+## First-run guide and reset controls
+
+See [ONBOARDING_AND_RESET.md](ONBOARDING_AND_RESET.md) for the current welcome/tour, reset deletion scope, optional backup limits, write-queue safety, verification and manual Expo Go checks. Full reset is now under Settings → Data & Privacy and requires typing RESET. The old prototype-only replacement control has been removed.
