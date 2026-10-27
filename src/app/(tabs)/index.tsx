@@ -1,0 +1,29 @@
+import React from 'react';
+import {Pressable,Text,View} from 'react-native';
+import {router} from 'expo-router';
+import {useStore} from '../../lib/store';
+import {dateKey,foodTotals,fullDate,palette,prettyDate,startSession,startSelectedSession} from '../../lib/model';
+import {ArnoldAvatar,Mascot} from '../../components/mascot';
+import {Body,Button,C,Icon,Label,Panel,Pill,Screen,Title,u} from '../../components/ui';
+export default function Today(){
+ const {state,update,tell}=useStore(),today=dateKey();
+ const scheduled=state.schedule.filter(p=>p.date>=today&&!p.completedSession).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time))[0];
+ const routine=state.routines.find(r=>r.id===scheduled?.routineId)||state.routines[0],totals=foodTotals(state,today);
+ const latest=[...state.history].sort((a,b)=>b.startedAt-a.startedAt)[0];
+ const firstWorkout=!state.active&&!latest&&!scheduled;
+ function repeat(){try{update(()=>startSelectedSession(state,latest!.exercises.map(e=>e.exercise.id),Date.now(),latest!.name));router.push('/workout')}catch(e){tell((e as Error).message)}}
+ const muscles=[...new Set(state.active?state.active.exercises.map(e=>e.exercise.group):latest&&!scheduled?latest.exercises.map(e=>e.exercise.group):routine?.items.map(i=>state.exercises.find(e=>e.id===i.exerciseId)?.group).filter(Boolean))];
+ function start(){if(!routine)return router.push('/routine/new');try{update(()=>startSession(state,routine.id,scheduled?.routineId===routine.id?scheduled.id:undefined));router.push('/workout')}catch(e){tell((e as Error).message)}}
+ return <Screen title="Today" eyebrow={fullDate(today)} resume={false} action={<Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={()=>router.push('/you')} style={{padding:12}}><Icon name="settings-outline"/></Pressable>}>
+  <View style={[u.row,{marginBottom:24}]}><ArnoldAvatar size={43}/><Text style={{color:C.text,fontSize:14,flex:1}}>{state.active?'Your workout is right where you left it.':state.prefs.name?`Ready when you are, ${state.prefs.name}.`:'Ready when you are.'}</Text></View>
+  {firstWorkout?<Panel style={{paddingVertical:32,borderColor:'#CCFF5535'}}><View style={{alignItems:'center'}}><View style={{width:150}}><Mascot height={160}/></View><Text style={{fontSize:30,lineHeight:37,fontWeight:'800',letterSpacing:-.8,color:C.text,textAlign:'center',marginTop:18}}>Your first workout{`\n`}starts here.</Text><Body style={{textAlign:'center'}}>{state.exercises.some(e=>e.baseline?.length)?'Your starting numbers are ready.':'No previous numbers needed.'}</Body></View><Button title="Start my first workout" onPress={()=>router.push('/choose-exercises')}/></Panel>:<Panel style={{borderColor:'#CCFF5535',padding:22}}>
+   <Label color={C.lime}>{state.active?'YOUR WORKOUT IS IN PROGRESS':scheduled?scheduled.date===today?`TODAY${scheduled.time?' · '+scheduled.time:''}`:`PLANNED · ${prettyDate(scheduled.date)}`:'YOUR NEXT WORKOUT'}</Label>
+   <View style={[u.row,{alignItems:'center'}]}><View style={{flex:1}}><Text style={{fontSize:30,fontWeight:'800',color:C.text,letterSpacing:-.8,lineHeight:37}}>{state.active?.name||(scheduled?routine?.name:latest?.name)||routine?.name||'Your first workout.'}</Text><Body>{state.active?`${state.active.exercises.length} exercises · Pick up where you left off`:latest&&!scheduled?`${latest.exercises.length} exercises · Your last numbers are ready`:routine?`${routine.items.length} exercises · Your starting numbers are ready`:'Choose your exercises and make it yours.'}</Body><View style={u.wrap}>{muscles.map(g=><Pill key={g} text={g!} color={palette[g!]}/>)}</View></View><View style={{width:110}}><Mascot height={145}/></View></View>
+   <Button title={state.active?'Resume workout →':latest&&!scheduled?'Repeat last workout':routine?'Start workout →':'Start workout →'} onPress={()=>state.active?router.push('/workout'):latest&&!scheduled?repeat():start()}/>
+   {!state.active?<><Button small secondary title="Choose different exercises" onPress={()=>router.push('/choose-exercises')}/><Button small secondary title="My workouts" onPress={()=>router.push('/train')}/></>:null}
+  </Panel>}
+  {state.prefs.nutrition?<Pressable accessibilityRole="button" onPress={()=>router.push('/nutrition')}><Panel><View style={u.row}><Icon name="restaurant-outline" color={C.amber}/><View style={{flex:1}}><Title>Food</Title><Body style={{marginVertical:3}}>{state.foods.filter(f=>f.date===today).length} meals · {Math.round(totals.calories)} cal logged</Body></View><Text style={{color:C.amber,fontWeight:'700'}}>＋ Add food</Text></View></Panel></Pressable>:state.history.length>0&&!state.prefs.nutritionPromptDismissed?<Panel><Title>Want to track food too?</Title><Body>Add meals, calories and optional macros whenever they’re useful to you.</Body><Button small secondary title="Add food tracking" onPress={()=>router.push('/nutrition')}/><Button small secondary title="Not now" onPress={()=>update(s=>({...s,prefs:{...s.prefs,nutritionPromptDismissed:true}}))}/></Panel>:null}
+  <Pressable accessibilityRole="button" accessibilityLabel="Add exercises" onPress={()=>router.push({pathname:'/arnold',params:{addWorkout:String(Date.now())}})} style={[u.row,{paddingVertical:18}]}><Icon name="add-circle-outline" color={C.lime}/><View style={{flex:1}}><Text style={{color:C.text,fontSize:14,fontWeight:'600'}}>Add exercises</Text><Text style={{color:C.muted,fontSize:11,marginTop:4}}>Import notes or photos, or enter numbers manually</Text></View><Icon name="chevron-forward" size={16}/></Pressable>
+  <Pressable accessibilityRole="button" onPress={()=>router.push('/schedule')} style={[u.row,{paddingVertical:18}]}><Icon name="calendar-outline"/><Text style={{color:C.muted,flex:1,fontSize:14}}>Plan next session</Text><Icon name="chevron-forward" size={16}/></Pressable>
+ </Screen>
+}

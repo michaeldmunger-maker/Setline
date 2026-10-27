@@ -1,0 +1,132 @@
+import React,{useEffect,useRef,useState} from 'react';
+import {Image,Keyboard,Pressable,Text,TextInput,View,useWindowDimensions,type TextInputInstance} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {router,useLocalSearchParams} from 'expo-router';
+import {useStore} from '../lib/store';
+import {applyImport,matchDraft,combineDrafts,modes,parseNotes,trainingContext,validateDraft,type Draft,type DraftExercise} from '../lib/arnold';
+import {askArnold,loadConnection,saveConnection} from '../lib/arnold-client';
+import {completeWelcome,groups,type State} from '../lib/model';
+import QuickWorkout from './quick-workout';
+import {FlowHeader,FlowTitle} from './flow';
+import {ArnoldAvatar,Mascot} from './mascot';
+import {Body,Button,C,Choice,ErrorBox,Field,Icon,Label,Panel,Screen,Title,u} from './ui';
+type Message={question:string;reply:string};
+function ExerciseEditor({exercise:e,state,onChange}:{exercise:DraftExercise;state:State;onChange:(p:Partial<DraftExercise>)=>void}){
+ const [library,setLibrary]=useState(false);
+ return <View style={{marginTop:18}}><Field label="Exercise name" value={e.name} onChange={name=>onChange({name})}/><Button small secondary title={e.match?'Linked to your library · change':'Link to an existing exercise'} onPress={()=>setLibrary(!library)}/>{library?<View style={u.wrap}><Button small secondary title="Create a separate exercise" onPress={()=>onChange({match:''})}/>{state.exercises.filter(x=>x.mode===e.mode).map(x=><Button small key={x.id} secondary={x.id!==e.match} title={x.name} onPress={()=>onChange({match:x.id,name:x.name,group:x.group})}/>)}</View>:null}<Label>HOW YOU LOG IT</Label><View style={u.wrap}>{modes.map(m=><Button small key={m} secondary={m!==e.mode} title={m==='added'?'Weighted bodyweight':m==='label'?'Plate label':m} onPress={()=>onChange({mode:m,match:''})}/>)}</View><Body style={{fontSize:11}}>Added weight is attached to you. Plate labels stay exactly as written. Timed sets use seconds.</Body><Choice values={['lb','kg'] as const} value={e.unit} onChange={unit=>onChange({unit})}/>{e.sets.map((s,i)=><View key={i} style={{borderTopWidth:1,borderColor:C.line,paddingTop:15}}><Label>SET {i+1}</Label><View style={u.row}>{!['bodyweight','timed'].includes(e.mode)?<Field label={`Set ${i+1} load`} value={s.load} onChange={load=>onChange({sets:e.sets.map((s,j)=>j===i?{...s,load}:s)})}/>:null}<Field label={`Set ${i+1} ${e.mode==='timed'?'seconds':'reps'}`} value={s.value} numeric onChange={value=>onChange({sets:e.sets.map((s,j)=>j===i?{...s,value}:s)})}/></View><Field label={`Set ${i+1} note`} value={s.note} onChange={note=>onChange({sets:e.sets.map((s,j)=>j===i?{...s,note}:s)})}/><Button small secondary title={`Remove set ${i+1}`} onPress={()=>onChange({sets:e.sets.filter((_,j)=>j!==i)})}/></View>)}<Button small secondary title="Add set" onPress={()=>onChange({sets:[...e.sets,{load:'',value:'',note:''}]})}/><Field label="Notes / uncertainty" value={e.note} onChange={note=>onChange({note})} multiline/><Label>MUSCLE GROUP</Label><View style={u.wrap}>{groups.map(group=><Button small key={group} secondary={e.group!==group} title={group} onPress={()=>onChange({group})}/>)}</View></View>
+}
+export default function Arnold({welcome=false}:{welcome?:boolean}){
+ const {height}=useWindowDimensions(),insets=useSafeAreaInsets();
+ const available=height-insets.top-insets.bottom,compactWelcome=available<650;
+ const welcomeMascotHeight=Math.max(100,Math.min(200,available-540));
+ const {state,update,tell}=useStore(),params=useLocalSearchParams<{question?:string;addWorkout?:string;addMaxes?:string}>();
+ const [step,setStep]=useState<'intro'|'hello'|'choose'|'import'|'fresh'|'saved'>(welcome?'intro':'choose'),[mode,setMode]=useState<'chat'|'import'>('chat');
+ const [text,setText]=useState(''),[draft,setDraft]=useState<Draft|null>(null),[loaded,setLoaded]=useState(false),[images,setImages]=useState<string[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[picking,setPicking]=useState(false),[kind,setKind]=useState<'routine'|'history'>('routine'),[editing,setEditing]=useState<number|null>(null),[warnings,setWarnings]=useState(false),[reviewDraft,setReviewDraft]=useState(false),[importMethod,setImportMethod]=useState<'text'|'photo'>('text'),[appendBatch,setAppendBatch]=useState(false),[savedName,setSavedName]=useState(''),[savedCount,setSavedCount]=useState(0),[savedAs,setSavedAs]=useState<'routine'|'history'|'maxes'>('routine');
+ const [question,setQuestion]=useState(''),[messages,setMessages]=useState<Message[]>([]),[url,setUrl]=useState(''),[token,setToken]=useState(''),[settings,setSettings]=useState(false),[lastQuestion,setLastQuestion]=useState<string|undefined>(undefined),[lastAddWorkout,setLastAddWorkout]=useState<string|undefined>(undefined);
+ const [recordingMaxes,setRecordingMaxes]=useState(true),[lastAddMaxes,setLastAddMaxes]=useState<string|undefined>(undefined);
+ const [mascotReady,setMascotReady]=useState(false);
+ const writes=useRef(Promise.resolve());
+ const notesInput=useRef<TextInputInstance>(null);
+ const [notesFocused,setNotesFocused]=useState(false);
+ function dismissNotes(){notesInput.current?.blur();Keyboard.dismiss();setNotesFocused(false)}
+ useEffect(()=>{let live=true;Promise.all([AsyncStorage.getItem('setline-arnold-draft'),AsyncStorage.getItem('setline-arnold-chat'),loadConnection()]).then(([d,m,c])=>{if(!live)return;if(d){const saved=JSON.parse(d);setText(saved.text||'');setDraft(saved.draft?validateDraft(saved.draft):null)}if(m)setMessages(JSON.parse(m));setUrl(c.url);setToken(c.token)}).catch(()=>{if(live)setError('Your import draft or connection settings could not be loaded. Your saved workouts are unchanged.')}).finally(()=>{if(live)setLoaded(true)});return()=>{live=false}},[]);
+ if(params.question!==lastQuestion){setLastQuestion(params.question);if(params.question){setQuestion(params.question);setMode('chat')}}
+ if(params.addWorkout!==lastAddWorkout){setLastAddWorkout(params.addWorkout);if(params.addWorkout){setRecordingMaxes(true);setMode('import');setStep('choose');setError('')}}
+ if(params.addMaxes!==lastAddMaxes){setLastAddMaxes(params.addMaxes);if(params.addMaxes){setRecordingMaxes(true);setMode('import');setStep('choose');setError('')}}
+ useEffect(()=>{if(!loaded)return;const snapshot=JSON.stringify({text,draft});writes.current=writes.current.then(()=>AsyncStorage.setItem('setline-arnold-draft',snapshot)).catch(()=>setError('Your draft could not be saved. Keep this screen open.'))},[text,draft,loaded]);
+ const edit=(i:number,p:Partial<DraftExercise>)=>setDraft(d=>d?{...d,exercises:d.exercises.map((e,j)=>i===j?{...e,...p}:e)}:null);
+ async function pick(){setPicking(true);try{setError('');const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],quality:1,allowsMultipleSelection:true,selectionLimit:Math.max(1,4-images.length)});if(result.canceled)return;const added=await Promise.all(result.assets.map(async asset=>{const converted=await ImageManipulator.manipulateAsync(asset.uri,asset.width>1400?[{resize:{width:1400}}]:[],{compress:.72,format:ImageManipulator.SaveFormat.JPEG,base64:true});if(!converted.base64)throw Error('Could not prepare this photo.');return 'data:image/jpeg;base64,'+converted.base64}));const next=[...images,...added];if(next.length>4||next.reduce((n,s)=>n+s.length,0)>8_000_000)throw Error('Choose up to four smaller photos.');setImages(next)}catch(e){setError((e as Error).message)}finally{setPicking(false)}}
+ function acceptDraft(next:Draft){setDraft(appendBatch&&draft?combineDrafts(draft,next):next);setAppendBatch(false);setEditing(null);setReviewDraft(true);setError('')}
+ function preview(){try{acceptDraft(matchDraft(parseNotes(text,state.prefs.unit),state))}catch(e){setError((e as Error).message)}}
+ async function read(){setBusy(true);setError('');try{const result=await askArnold({action:'import',text,images,unit:state.prefs.unit});acceptDraft(matchDraft(validateDraft(result.draft),state))}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ async function ask(){setBusy(true);setError('');try{if(!question.trim())throw Error('Ask Arnold a question first.');const result=await askArnold({action:'chat',text:question,unit:state.prefs.unit,context:trainingContext(state)});if(typeof result.reply!=='string')throw Error('Arnold could not finish this reply. Please retry.');const next=[{question,reply:result.reply},...messages].slice(0,12);setMessages(next);setQuestion('');await AsyncStorage.setItem('setline-arnold-chat',JSON.stringify(next))}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ function approve(){try{if(!draft)return;const next=applyImport(state,draft,recordingMaxes&&kind==='routine'?'baseline':kind);update(()=>completeWelcome(next));setSavedName(draft.name);setSavedCount(draft.exercises.length);setSavedAs(recordingMaxes&&kind==='routine'?'maxes':kind);setDraft(null);setText('');setImages([]);setReviewDraft(false);setStep('saved');setError('')}catch(e){setError((e as Error).message)}}
+ function beginImport(method:'text'|'photo'){setImportMethod(method);setKind('routine');if(method==='text')setImages([]);setMode('import');setStep('import');setReviewDraft(false);setError('');if(method==='photo'&&!images.length)void pick()}
+ if(welcome&&(step==='intro'||step==='hello'))return <Screen title="" eyebrow="" header={false} narrow saveLabel={false} resume={false} contentStyle={step==='hello'?{paddingTop:compactWelcome?8:16,paddingBottom:insets.bottom+12}:undefined}>
+  <View style={step==='intro'?{minHeight:Math.max(400,height-140),justifyContent:'center'}:{minHeight:Math.max(0,available-(compactWelcome?20:28)),justifyContent:'center'}}>
+   {step==='hello'?<Text style={{color:C.muted,fontSize:9,letterSpacing:1.5,textAlign:'center',marginBottom:6}}>SETLINE · YOUR CORNER OF THE GYM</Text>:null}
+   <View key="welcome-mascot" aria-hidden={step==='intro'} pointerEvents="none" accessibilityElementsHidden={step==='intro'} importantForAccessibility={step==='intro'?'no-hide-descendants':'auto'} style={step==='intro'?{position:'absolute',width:'100%',opacity:0}:undefined}>
+    <Mascot height={step==='hello'?welcomeMascotHeight:200} onLoad={()=>setMascotReady(true)} onError={()=>setMascotReady(true)}/>
+   </View>
+   {step==='intro'?<><Text style={{color:C.text,fontSize:43,lineHeight:52,fontWeight:'800',letterSpacing:-1.5,textAlign:'center'}}>Welcome to{`\n`}<Text style={{color:C.lime}}>Setline</Text></Text><View style={{marginTop:48}}><Button title="Continue →" disabled={!mascotReady} onPress={()=>setStep('hello')}/></View></>:<>
+<Text style={{color:C.text,fontSize:compactWelcome?32:36,lineHeight:compactWelcome?38:43,fontWeight:'800',letterSpacing:-1.3,textAlign:'center',marginTop:6}}>Hey, I’m <Text style={{color:C.lime}}>Arnold.</Text></Text>
+<Body style={{textAlign:'center',fontSize:compactWelcome?13:14,lineHeight:compactWelcome?18:21,marginTop:8,marginBottom:12}}>{compactWelcome?'Let’s add the sets, reps, and weight from your last workouts. Paste notes or upload photos and I’ll organize them for you.':'Let’s add the sets, reps, and weight from your last workouts. Send me your notes or photos and I’ll organize the numbers for you to check.'}</Body>
+<Button compact secondary title="Paste my workout notes" onPress={()=>beginImport('text')}/>
+<Button compact secondary title="Upload workout photos" onPress={()=>beginImport('photo')}/>
+<Button compact secondary title="Enter my numbers manually" onPress={()=>setStep('fresh')}/>
+<Button compact title="Start fresh" onPress={()=>{update(completeWelcome);router.replace('/')}}/>
+<Text style={{color:C.muted,fontSize:10,lineHeight:14,textAlign:'center',marginTop:10}}>Add more whenever you like.</Text>
+   </>}
+  </View>
+ </Screen>;
+ if((welcome||mode==='import')&&step==='fresh')return <QuickWorkout maxes={recordingMaxes} onBack={()=>setStep('choose')} onSaved={(name,count)=>{setSavedName(name);setSavedCount(count);setSavedAs(recordingMaxes?'maxes':'routine');setStep('saved');setMode('import');setError('')}}/>;
+ const importing=welcome||mode==='import';
+ if(importing&&step==='choose')return <Screen title={recordingMaxes?'Add your current numbers.':'Let Arnold do the typing.'} eyebrow="START WITH YOUR NOTES OR PHOTOS" narrow saveLabel={false} resume={false}>
+  <View style={[u.row,{marginBottom:18}]}><ArnoldAvatar size={54}/><Body style={{flex:1,color:C.text}}>Send me the sets, reps, and weight from your last workouts. I’ll organize them for you to review before saving.</Body></View>
+  <Panel style={{borderColor:C.lime+'65'}}><Label color={C.lime}>EASIEST WAY TO START</Label><Title>Use what you’ve already tracked.</Title><Body>Paste notes from your phone, or upload a screenshot or notebook photo. Add one session at a time.</Body><Button title="Paste my workout notes" onPress={()=>beginImport('text')}/><Button secondary title="Upload workout photos" onPress={()=>beginImport('photo')}/></Panel>
+  {draft?<Panel><Title>Your unfinished import</Title><Body>{draft.name} · {draft.exercises.length} exercises.</Body><Button small secondary title="Review my saved draft" onPress={()=>{setStep('import');setReviewDraft(true)}}/></Panel>:null}
+  <Button small secondary title="I’d rather enter it manually" onPress={()=>{setStep('fresh');setError('')}}/>
+  <Button small secondary title={welcome?'Back to Arnold':'Back to chat'} onPress={()=>welcome?setStep('hello'):setMode('chat')}/>
+ </Screen>;
+ if(importing&&step==='saved')return <Screen title="" eyebrow="" header={false} narrow saveLabel={false} resume={false}>
+  <FlowHeader step={3} onBack={()=>setStep('choose')}/><Mascot height={205}/>
+  <Text style={{color:C.text,fontSize:32,lineHeight:39,fontWeight:'800',letterSpacing:-1,textAlign:'center',marginTop:22}}>{savedAs==='history'?'Your workout is saved.':'Your starting point\nis saved.'}</Text>
+  <Body style={{textAlign:'center',fontSize:15,lineHeight:24,marginVertical:20}}>Nice work! I’ve got your numbers, and we’re ready when you are.</Body>
+  <Body style={{textAlign:'center',fontSize:12}}>{savedCount} exercises · {savedName}</Body>
+  <Button title="Ready to train" onPress={()=>router.replace('/')}/><Button secondary title="Add more exercises" onPress={()=>{setStep('choose');setKind('routine');setError('')}}/>
+ </Screen>;
+ const shownDraft=reviewDraft?draft:null;
+ const connection=<Panel><Title>Arnold connection</Title><Body>Connect your Mac service for photo reading and live AI. Pasted notes can be read offline.</Body><Field label="Service URL" value={url} onChange={setUrl} placeholder="http://192.168.1.193:8091"/><Field label="Pairing code · not your API key" value={token} onChange={setToken}/><Button title="Save connection" onPress={async()=>{try{await saveConnection({url,token});setError('');tell('Arnold connection saved.');setSettings(false)}catch(e){setError((e as Error).message)}}}/></Panel>;
+ const editingNotes=!shownDraft&&importMethod==='text'&&notesFocused;
+ if(importing)return <Screen title="" eyebrow="" header={false} narrow saveLabel={false} resume={false} scrollEnabled={!editingNotes} contentStyle={editingNotes?{flex:1,paddingTop:8,paddingBottom:12}:undefined} footer={editingNotes?undefined:<><ErrorBox text={error}/><Button title={picking?'Preparing photos…':busy?'Arnold is reading…':shownDraft?kind==='history'?'Save completed workout':recordingMaxes?'Save my starting numbers':'Save workout':importMethod==='text'?'Review my exercises →':'Let Arnold read it'} disabled={busy||picking||!loaded||(!shownDraft&&!text.trim()&&!images.length)} onPress={()=>{dismissNotes();if(shownDraft)approve();else if(images.length||url&&token)void read();else preview()}}/></>}>
+
+  {!editingNotes?<FlowHeader step={shownDraft?2:1} action={!shownDraft&&importMethod==='text'?<Pressable accessibilityRole="button" accessibilityLabel="Arnold connection settings" onPress={()=>setSettings(!settings)} style={{padding:10}}><Icon name="settings-outline" size={20}/></Pressable>:undefined} onBack={()=>{if(shownDraft)setReviewDraft(false);else setStep(welcome?'hello':'choose')}}/>:null}
+  {!editingNotes?<FlowTitle>{shownDraft?'Did I get this right?':importMethod==='photo'?'Add your workout photos':'Paste your workout notes'}</FlowTitle>:null}
+  {shownDraft?<>
+   <View style={[u.row,{marginVertical:18}]}><ArnoldAvatar size={66}/><View style={{flex:1,backgroundColor:C.panel,padding:16,borderRadius:16}}><Text style={{color:C.text,fontSize:14,lineHeight:22}}>Check these numbers before saving.</Text></View></View>
+   {!recordingMaxes||kind==='history'?<Field label="Workout name" value={shownDraft.name} onChange={name=>setDraft({...shownDraft,name})}/>:null}
+   {shownDraft.exercises.map((e,i)=><Panel key={i} style={{padding:17}}>
+    <View style={[u.row,{justifyContent:'space-between',marginBottom:18}]}><Text style={{color:C.text,fontWeight:'800',fontSize:18,flex:1}}>{e.name}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Edit ${e.name}`} onPress={()=>setEditing(editing===i?null:i)} style={{padding:7,borderRadius:7,borderWidth:1,borderColor:C.line}}><Text style={{color:C.blue,fontSize:12}}>✎ Edit</Text></Pressable></View>
+    <View style={[u.row,{marginBottom:10}]}><Text style={{width:30,color:C.muted,fontSize:12}}>Set</Text><Text style={{flex:1,color:C.muted,fontSize:12}}>Weight</Text><Text style={{width:60,color:C.muted,fontSize:12}}>{e.mode==='timed'?'Seconds':'Reps'}</Text></View>
+    {e.sets.map((s,j)=><View key={j} style={[u.row,{paddingVertical:13,borderTopWidth:1,borderColor:C.line}]}><Text style={{width:30,color:C.text}}>{j+1}</Text><Text style={{flex:1,color:C.text,fontSize:15}}>{e.mode==='bodyweight'?'Bodyweight':e.mode==='timed'?'Timed hold':(s.load||'—')+(e.mode==='label'?'':' '+e.unit)}</Text><Text style={{width:60,color:C.text,fontSize:15}}>{s.value||'—'}</Text></View>)}
+    {editing===i?<><ExerciseEditor exercise={e} state={state} onChange={p=>edit(i,p)}/><Button small secondary title="Remove exercise" onPress={()=>{setDraft({...shownDraft,exercises:shownDraft.exercises.filter((_,j)=>j!==i)});setEditing(null)}}/></>:null}
+   </Panel>)}
+   {shownDraft.warnings.length?<><Button small secondary title={warnings?'Hide reading notes':`Check ${shownDraft.warnings.length} reading notes`} onPress={()=>setWarnings(!warnings)}/>{warnings?shownDraft.warnings.map((w,i)=><Body key={i} style={{fontSize:12,color:C.amber}}>{w}</Body>):null}</>:null}
+   <Button secondary title="＋ Add more notes or photos" onPress={()=>{setAppendBatch(true);setText('');setImages([]);setStep('choose');setReviewDraft(false)}}/>
+   <Body style={{fontSize:11}}>Your starting numbers stay separate from completed workouts.</Body>
+   <Button small secondary title={kind==='history'?'Use as starting numbers instead':'Save as a dated past workout instead'} onPress={()=>setKind(kind==='history'?'routine':'history')}/>
+   {kind==='history'?<Field label="Workout date · YYYY-MM-DD" value={shownDraft.date} onChange={date=>setDraft({...shownDraft,date})}/>:null}
+  </>:<>
+   {!editingNotes?<Body style={{fontSize:15,marginTop:0,marginBottom:22}}>{importMethod==='photo'?'Upload screenshots or photos of your notes from your camera roll.':'Copy one workout from Notes or another app and paste it below. No special format needed, Arnold will figure it out.'}</Body>:null}
+   {importMethod==='text'?<View style={editingNotes?{flex:1}:undefined}><View style={[u.row,{justifyContent:'space-between',minHeight:44,marginBottom:4}]}><Label>{editingNotes?'YOUR WORKOUT NOTES':'PASTE HERE'}</Label>{editingNotes?<Pressable accessibilityRole="button" accessibilityLabel="Done typing" onPress={dismissNotes} style={{minHeight:44,justifyContent:'center',paddingHorizontal:10}}><Text style={{color:C.lime,fontSize:15,fontWeight:'700'}}>Done</Text></Pressable>:null}</View><TextInput ref={notesInput} onFocus={()=>setNotesFocused(true)} onBlur={()=>setNotesFocused(false)} accessibilityLabel="Your workout notes" value={text} onChangeText={setText} multiline scrollEnabled placeholder={'Tap and hold here, then choose Paste.\n\nExample:\nWeighted pull-ups\n10 lb\n12, 11, 10'} placeholderTextColor={C.muted} style={[u.input,{textAlignVertical:'top',lineHeight:25,padding:17,fontSize:16},editingNotes?{flex:1,minHeight:140}:{minHeight:Math.max(220,Math.min(380,height-420))}]}/></View>:<>
+    {images.map((uri,i)=><View key={uri+i} style={{borderRadius:17,overflow:'hidden',marginBottom:14,backgroundColor:C.panel}}><Image source={{uri}} accessibilityLabel={`Workout photo ${i+1}`} style={{width:'100%',height:240,resizeMode:'contain'}}/><Pressable accessibilityRole="button" accessibilityLabel={`Remove photo ${i+1}`} onPress={()=>setImages(old=>old.filter((_,j)=>j!==i))} style={{position:'absolute',right:10,top:10,backgroundColor:C.panel,borderRadius:20,padding:8}}><Icon name="close" color={C.text}/></Pressable></View>)}
+    <Button secondary title={images.length?'＋ Add another photo':'＋ Choose workout photos'} disabled={busy||picking||images.length>=4} onPress={pick}/>
+    <Body style={{fontSize:11}}>Use up to four photos from one session. Photos are temporary until read.</Body>
+    <Field label="Anything Arnold should know? · optional" value={text} onChange={setText} placeholder="e.g. My chest & back session"/>
+   </>}
+   {importMethod==='text'?<>{!editingNotes?<>
+    <Body style={{fontSize:12,marginTop:14}}>You’ll check and edit the exercises before anything is saved.</Body>
+    {url&&token?<Body style={{fontSize:11}}>Arnold reads these notes through your connected OpenAI service.</Body>:null}
+    {settings?connection:null}
+   </>:null}</>:<>
+    {url&&token||images.length?<Body style={{fontSize:11}}>Reading with Arnold sends these notes/photos to OpenAI through your connected service. You review everything before saving.</Body>:null}
+    {!url||!token?<Body style={{fontSize:12,color:C.amber}}>Connect Arnold below to read photos. Pasted notes work without a connection.</Body>:null}
+    <Button small secondary title={settings?'Hide connection settings':'Arnold connection settings'} onPress={()=>setSettings(!settings)}/>
+    {settings?connection:null}
+    <Body style={{fontSize:11}}>Add one session at a time. You can bring in more before saving.</Body>
+   </>}
+
+  </>}
+ </Screen>;
+ return <Screen title="Arnold" eyebrow="YOUR TRAINING BUDDY" narrow saveLabel={false} action={<Pressable accessibilityRole="button" accessibilityLabel="Arnold connection settings" onPress={()=>setSettings(!settings)} style={{padding:12}}><Icon name="settings-outline"/></Pressable>}>
+  <View style={[u.row,{marginBottom:22}]}><ArnoldAvatar size={60}/><Body style={{flex:1,color:C.text}}>Your gym buddy, always in your corner.</Body></View>
+  <Button secondary title="Add notes, photos or starting numbers" onPress={()=>{setMode('import');setStep('choose')}}/>
+  <ErrorBox text={error}/><View style={[u.wrap,{marginVertical:20}]}>{['Review my last workout','Plan my next session'].map(q=><Button small secondary key={q} title={q} onPress={()=>setQuestion(q)}/>)}</View>
+  <Panel><Field label="Ask Arnold" value={question} onChange={setQuestion} multiline placeholder="Should I repeat my last pull-up weight?"/><Button title={busy?'Arnold is thinking…':'Send to Arnold ↑'} disabled={busy} onPress={ask}/><Body style={{fontSize:11}}>Arnold sees your recent workouts and starting numbers. Suggestions never change your weights.</Body>{!url||!token?<Button small secondary title="Connect Arnold" onPress={()=>setSettings(true)}/>:null}</Panel>
+  {messages.map((m,i)=><View key={i} style={{marginBottom:24}}><Panel><Label>YOU</Label><Text selectable style={{color:C.text,lineHeight:23}}>{m.question}</Text></Panel><View style={[u.row,{alignItems:'flex-start'}]}><ArnoldAvatar size={38}/><Text selectable style={{flex:1,color:C.text,fontSize:14,lineHeight:24}}>{m.reply}</Text></View></View>)}
+  {settings?connection:null}
+ </Screen>;
+}
