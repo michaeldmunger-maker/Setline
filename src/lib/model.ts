@@ -62,6 +62,32 @@ export function logWorkoutSet(session:Session,exerciseId:string,setId:string,now
  const carry=next&&!next.done&&!next.load&&!next.value&&!next.note&&!next.quality&&!log.previous[index+1];
  return {...session,restUntil:log.exercise.rest?now+log.exercise.rest*1000:session.restUntil,exercises:session.exercises.map(e=>e!==log?e:{...e,sets:e.sets.map(s=>s.id===setId?{...s,done:true}:carry&&s.id===next.id?{...s,load:set.load,value:set.value,unit:set.unit}:s)})};
 }
+export function configureWorkoutExercise(session:Session,exerciseId:string,count:number):Session{
+ if(!Number.isInteger(count)||count<1||count>30)throw Error('Choose 1 to 30 sets.');
+ const log=session.exercises.find(e=>e.exercise.id===exerciseId);
+ if(!log)throw Error('This exercise is no longer in the workout.');
+ if(log.sets.slice(count).some(s=>s.done))throw Error('Keep your logged sets. Undo a set before removing it.');
+ const last=log.sets.at(-1);
+ const sets=Array.from({length:count},(_,i)=>log.sets[i]||{...blankSet(last?.unit),load:last?.load||'',value:last?.value||''});
+ return {...session,exercises:session.exercises.map(e=>e===log?{...e,sets}:e)};
+}
+export function suggestWorkoutNumbers(session:Session,exerciseId:string):Session{
+ const log=session.exercises.find(e=>e.exercise.id===exerciseId),first=log?.sets[0];
+ if(!log||!first)return session;
+ return {...session,exercises:session.exercises.map(e=>e!==log?e:{...e,sets:e.sets.map((s,i)=>i&&!s.done&&!s.load&&!s.value&&!s.note&&!s.quality&&!e.previous[i]?{...s,load:first.load,value:first.value,unit:first.unit}:s)})};
+}
+export function workoutSummary(session:Session,now=Date.now()){
+ const logs=session.exercises.map(e=>({...e,sets:e.sets.filter(s=>s.done)})).filter(e=>e.sets.length);
+ const volume={lb:0,kg:0},volumeSets={lb:0,kg:0};let reps=0,seconds=0,excludedSets=0,addedLoad=false;
+ for(const log of logs)for(const set of log.sets){
+  const value=Number(set.value),load=Number(set.load);
+  if(log.exercise.mode==='timed'){if(Number.isFinite(value)&&value>0)seconds+=value;excludedSets++;continue;}
+  if(Number.isInteger(value)&&value>0)reps+=value;
+  if(['weight','added'].includes(log.exercise.mode)&&set.load.trim()&&Number.isFinite(load)&&load>=0&&Number.isInteger(value)&&value>0){volume[set.unit]+=load*value;volumeSets[set.unit]++;if(log.exercise.mode==='added')addedLoad=true;}
+  else excludedSets++;
+ }
+ return {exercises:logs.length,sets:logs.reduce((n,e)=>n+e.sets.length,0),reps,seconds,volume,volumeSets,excludedSets,addedLoad,minutes:Math.max(0,Math.round(((session.endedAt??now)-session.startedAt)/60000))};
+}
 export function exerciseHistory(state:State,id:string){return [...state.history].sort((a,b)=>a.startedAt-b.startedAt).flatMap(session=>session.exercises.filter(e=>e.exercise.id===id).map(e=>({session,log:e})))}
 export function bestPerformance(state:State,id:string,unit:Unit=state.prefs.unit){const history=exerciseHistory(state,id);const exercise=state.exercises.find(e=>e.id===id)||history.at(-1)?.log.exercise;if(!exercise)return null;const sets=history.flatMap(x=>x.log.sets).filter(s=>s.done);if(!sets.length)return null;if(exercise.mode==='timed')return {value:Math.max(...sets.map(s=>Number(s.value))),label:'Longest hold',unit:'sec'};if(exercise.mode==='weight'||exercise.mode==='added'){const compatible=sets.filter(s=>s.unit===unit);if(!compatible.length)return null;return {value:Math.max(...compatible.map(s=>Number(s.load))),label:exercise.mode==='added'?'Most added weight':'Highest recorded load',unit}}return {value:Math.max(...sets.map(s=>Number(s.value))),label:'Most reps in one set',unit:'reps'}}
 export function addSchedule(state:State,routineId:string,date:string,time:string,weeks=1){parseDate(date);if(!state.routines.some(r=>r.id===routineId))throw Error('Choose a routine.');if(time&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('Use a time like 17:00, or leave it blank.');if(!Number.isInteger(weeks)||weeks<1||weeks>12)throw Error('Choose between 1 and 12 weeks.');const additions=Array.from({length:weeks},(_,i)=>({id:uid(),routineId,date:addDays(date,i*7),time})).filter(p=>!state.schedule.some(s=>s.date===p.date&&s.time===p.time&&s.routineId===p.routineId));return {...state,schedule:[...state.schedule,...additions]}}

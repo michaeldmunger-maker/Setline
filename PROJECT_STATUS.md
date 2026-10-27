@@ -14,8 +14,8 @@ Arnold is an original weight-plate coach mascot. The approved look is charcoal/b
 2. Meet Arnold: Paste my workout notes, Upload workout photos, Enter my numbers manually, or Start fresh. The first three buttons are dark; Start fresh is green.
 3. Notes/photos lead to editable exercise review, then explicitly save starting numbers. Starting numbers mean the last sets, reps and weight performed, not a required one-rep max. Pasted notes have a limited offline parser; AI and photo interpretation need the optional server.
 4. Manual entry: choose exercise, choose set count with +/−, then set reps and weight per set with +/−.
-5. Start fresh leads directly to Today. Choose exercises and start training without naming a routine.
-6. Training shows completed sets and a current set, previous numbers, rest timer, exercise switching and adding exercises. Finish reviews and saves checked sets only. Today then offers Repeat last workout.
+5. Start fresh leads directly to Today. Search and filter exercises, or create a custom one using name → muscle group → logging mode. Selected exercises start an autosaved active session and get a two-step setup inside the workout route: set count → editable starting numbers. No routine name is required.
+6. Training shows completed sets and a current set, previous numbers, brief inline log confirmation, pinned rest controls, exercise switching and adding exercises. Completion review and saved history include completed exercises, sets, reps, duration and recorded-weight volume, separated by unit. Timed holds appear separately; bodyweight and plate labels never produce guessed load volume. Finish saves checked sets only. Today then offers Repeat last workout.
 
 Visible tabs: Today, Progress, Arnold. Training management and settings still exist as secondary routes. Food and scheduling are optional.
 
@@ -38,7 +38,7 @@ npm run export:ios
 
 Expo Go must support SDK 58. Phone and development Mac need to reach each other on the network. `npm run web` provides a browser preview. The iOS export checks the JS/Hermes bundle; it is not a signed app or a physical-device runtime test.
 
-On this snapshot: typecheck, lint, all 44 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Workout logging was also checked at 390×844 and 375×667 in an isolated browser preview: automatic previous numbers, logging, edits, undo, rest extension/skip and reload continuity passed without horizontal overflow. Native keyboard, safe areas, thumb reach and background/resume still need physical iPhone testing.
+On this snapshot: typecheck, lint, all 50 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Workout logging was also checked at 390×844 and 375×667 in an isolated browser preview: automatic previous numbers, logging, edits, undo, rest extension/skip and reload continuity passed without horizontal overflow. Native keyboard, safe areas, thumb reach and background/resume still need physical iPhone testing.
 
 ## Data must survive changes
 
@@ -70,3 +70,5 @@ No live OpenAI call has been verified in this session. Photos and AI chat requir
 There is no App Store release, signed standalone build, cloud sync, barcode database, automatic nutrition estimation or background timer notification. UI screenshots and builds do not prove physical-device behavior.
 
 For a useful review, trace a full first-run → import/manual/fresh → workout → save → relaunch journey. Report concrete user obstacles and propose one focused improvement at a time. Preserve existing data and the approved visual direction.
+
+Phase 1 verification and manual Expo Go checks: see [PHASE_1.md](PHASE_1.md).
