@@ -19,7 +19,9 @@ Arnold is an original weight-plate coach mascot. The approved look is charcoal/b
 
 Visible tabs: Today, Progress, Arnold. Training management and settings still exist as secondary routes. Food and scheduling are optional.
 
-Latest change: while typing workout notes, a compact Done toolbar and expanded notes field replace the surrounding page content. Done restores the review action without losing text. Browser focus/scrolling was checked; the actual iPhone software keyboard still needs user testing.
+Workout logging now shows previous performance automatically with its source. The current set stays above the set list, with full-width 48-point stepper controls and a pinned Log set action. Unlogged values are labeled as editable suggestions. Logging carries numbers into the next blank set only when it has no prior target, numbers, note or marker; existing future entries stay intact. Completed-set edits and repeated completion do not restart rest. Extra routine sets reuse the last known reps as unchecked suggestions. No storage schema or recovery changes were made.
+
+While typing workout notes, a compact Done toolbar and expanded notes field replace the surrounding page content. Done restores the review action without losing text. Browser focus/scrolling was checked; the actual iPhone software keyboard still needs user testing.
 
 ## Run and verify
 
@@ -36,7 +38,7 @@ npm run export:ios
 
 Expo Go must support SDK 58. Phone and development Mac need to reach each other on the network. `npm run web` provides a browser preview. The iOS export checks the JS/Hermes bundle; it is not a signed app or a physical-device runtime test.
 
-On this snapshot: typecheck, lint, all 36 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Latest native runtime behavior still needs testing on the owner's phone.
+On this snapshot: typecheck, lint, all 44 tests, iOS export and all 20 Expo Doctor checks passed. The SDK 58 manifest was verified on the LAN development server. Workout logging was also checked at 390×844 and 375×667 in an isolated browser preview: automatic previous numbers, logging, edits, undo, rest extension/skip and reload continuity passed without horizontal overflow. Native keyboard, safe areas, thumb reach and background/resume still need physical iPhone testing.
 
 ## Data must survive changes
 
